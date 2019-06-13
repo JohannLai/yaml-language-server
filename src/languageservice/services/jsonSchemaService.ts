@@ -12,6 +12,7 @@ import * as Strings from '../utils/strings';
 import {SchemaRequestService, WorkspaceContextService, PromiseConstructor, Thenable} from '../yamlLanguageService';
 
 import * as nls from 'vscode-nls';
+import { resolveURL } from '../utils/kubernetesResolver';
 const localize = nls.loadMessageBundle();
 
 /**
@@ -375,11 +376,22 @@ export class JSONSchemaService implements IJSONSchemaService {
         return this.promise.resolve(null);
     }
 
+    /**
+     * Save a schema with schema ID and schema content.
+     * Overrides previous schemas set for that schema ID.
+     */
+    public async saveSchema(schemaId: string, schemaContent: JSONSchema): Promise<void> {
+        const id = this.normalizeId(schemaId);
+        this.schemasById[id] = new SchemaHandle(this, schemaId, schemaContent);
+        return Promise.resolve(undefined);
+    }
+
     public loadSchema(url: string): Thenable<UnresolvedSchema> {
         if (!this.requestService) {
             const errorMessage = localize('json.schema.norequestservice', "Unable to load schema from '{0}'. No schema request service available", toDisplayString(url));
             return this.promise.resolve(new UnresolvedSchema(<JSONSchema>{}, [errorMessage]));
         }
+        url = resolveURL(url);
         return this.requestService(url).then(
             content => {
                 if (!content) {

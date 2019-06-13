@@ -13,6 +13,7 @@ import { YAMLHover } from './services/yamlHover';
 import { YAMLValidation } from './services/yamlValidation';
 import { YAMLFormatter } from './services/yamlFormatter';
 import { LanguageService as JSONLanguageService } from 'vscode-json-languageservice';
+import { SchemaModification, SchemaAdditions, SchemaDeletions } from './apis/schemaModification';
 
 export interface LanguageSettings {
   validate?: boolean; //Setting for whether we want to validate the schema
@@ -118,6 +119,8 @@ export interface LanguageService {
   doResolve(completionItem);
   resetSchema(uri: string): boolean;
   doFormat(document: TextDocument, options: CustomFormatterOptions);
+  modifySchemaContent(schemaAdditions: SchemaAdditions);
+  deleteSchemaContent(schemaDeletions: SchemaDeletions);
 }
 
 export function getLanguageService(schemaRequestService, workspaceContext, contributions, promiseConstructor?): LanguageService {
@@ -130,6 +133,7 @@ export function getLanguageService(schemaRequestService, workspaceContext, contr
   const yamlDocumentSymbols = new YAMLDocumentSymbols();
   const yamlValidation = new YAMLValidation(promise);
   const formatter = new YAMLFormatter();
+  const schemaModifier = new SchemaModification();
 
   return {
       configure: settings => {
@@ -155,6 +159,8 @@ export function getLanguageService(schemaRequestService, workspaceContext, contr
       findDocumentSymbols: yamlDocumentSymbols.findDocumentSymbols.bind(yamlDocumentSymbols),
       findDocumentSymbols2: yamlDocumentSymbols.findHierarchicalDocumentSymbols.bind(yamlDocumentSymbols),
       resetSchema: (uri: string) => schemaService.onResourceChange(uri),
-      doFormat: formatter.format.bind(formatter)
+      doFormat: formatter.format.bind(formatter),
+      modifySchemaContent: (schemaAdditions: SchemaAdditions) => schemaModifier.addContent(schemaService, schemaAdditions),
+      deleteSchemaContent: (schemaDeletions: SchemaDeletions) => schemaModifier.deleteContent(schemaService, schemaDeletions)
   };
 }

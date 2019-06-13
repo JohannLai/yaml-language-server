@@ -26,11 +26,17 @@ import { parse as parseYAML } from './languageservice/parser/yamlParser04';
 import { parse as parseYAML2 } from './languageservice/parser/yamlParser07';
 import { JSONSchema } from './languageservice/jsonSchema04';
 import { getLanguageService as getJSONLanguageService } from 'vscode-json-languageservice';
+import { SchemaAdditions, SchemaDeletions, MODIFICATION_ACTIONS } from './languageservice/apis/schemaModification';
+import { resolveURL, KUBERNETES_SCHEMA_URL } from './languageservice/utils/kubernetesResolver';
 // tslint:disable-next-line: no-any
 nls.config(<any>process.env['VSCODE_NLS_CONFIG']);
 
 interface ISchemaAssociations {
     [pattern: string]: string[];
+}
+
+namespace SchemaModificationNotification {
+    export const type: NotificationType<{}, {}> = new NotificationType('yaml/modify');
 }
 
 namespace SchemaAssociationNotification {
@@ -172,7 +178,6 @@ const schemaRequestService = (uri: string): Thenable<string> => {
         Promise.reject(error.responseText || getErrorStatusDescription(error.status) || error.toString()));
 };
 
-export let KUBERNETES_SCHEMA_URL = "https://raw.githubusercontent.com/garethr/kubernetes-json-schema/master/v1.14.0-standalone-strict/all.json";
 export let customLanguageService = getCustomLanguageService(schemaRequestService, workspaceContext, []);
 export let jsonLanguageService = getJSONLanguageService({
     schemaRequestService,
@@ -258,7 +263,7 @@ connection.onDidChangeConfiguration(change => {
     const jsonSchemas = [];
     for (const url in yamlConfigurationSettings){
         const globPattern = yamlConfigurationSettings[url];
-        const checkedURL = url.toLowerCase() === 'kubernetes' ? KUBERNETES_SCHEMA_URL : url;
+        const checkedURL = resolveURL(url);
         const schemaObj = {
             'fileMatch': Array.isArray(globPattern) ? globPattern : [globPattern],
             'uri': checkedURL
@@ -351,6 +356,18 @@ connection.onNotification(SchemaAssociationNotification.type, associations => {
     updateConfiguration();
 });
 
+connection.onNotification(SchemaModificationNotification.type, modifications => {
+    const incomingNotification = modifications as SchemaAdditions | SchemaDeletions;
+
+    incomingNotification.schema = resolveURL(incomingNotification.schema);
+
+    if (incomingNotification.action === MODIFICATION_ACTIONS.add) {
+        customLanguageService.modifySchemaContent(incomingNotification);
+    } else if (incomingNotification.action === MODIFICATION_ACTIONS.delete) {
+        customLanguageService.deleteSchemaContent(incomingNotification);
+    }
+});
+
 connection.onNotification(DynamicCustomSchemaRequestRegistration.type, () => {
     const schemaProvider = (resource => connection.sendRequest(CustomSchemaRequest.type, resource)) as CustomSchemaProvider;
     customLanguageService.registerCustomSchemaProvider(schemaProvider);
@@ -405,9 +422,7 @@ function updateConfiguration() {
 
 function configureSchemas(uri, fileMatch, schema, languageSettings){
 
-	if(uri.toLowerCase().trim() === "kubernetes"){
-		uri = KUBERNETES_SCHEMA_URL;
-	}
+    uri = resolveURL(uri);
 
 	if(schema === null){
 		languageSettings.schemas.push({ uri, fileMatch: fileMatch });
